@@ -27,17 +27,19 @@ type GroupAppService interface {
 
 // EventManager manages the event system lifecycle
 type EventManager struct {
-	provider      QueueProvider
-	publisher     *Publisher
-	consumer      *Consumer
-	healthChecker *HealthChecker
-	router        *EventRouter
+	provider                QueueProvider
+	publisher               *Publisher
+	consumer                *Consumer
+	healthChecker           *HealthChecker
+	router                  *EventRouter
+	skipInfrastructureSetup bool
 }
 
 // NewEventManager creates a new event manager
 func NewEventManager(
 	provider QueueProvider,
 	auditRepo *repository.EventAuditRepository,
+	skipInfrastructureSetup bool,
 ) (*EventManager, error) {
 	// If no provider configured, return nil manager
 	if provider == nil {
@@ -60,11 +62,12 @@ func NewEventManager(
 	healthChecker := NewHealthChecker(provider, 30*time.Second, reconnectFunc)
 
 	return &EventManager{
-		provider:      provider,
-		publisher:     publisher,
-		consumer:      consumer,
-		healthChecker: healthChecker,
-		router:        router,
+		provider:                provider,
+		publisher:               publisher,
+		consumer:                consumer,
+		healthChecker:           healthChecker,
+		router:                  router,
+		skipInfrastructureSetup: skipInfrastructureSetup,
 	}, nil
 }
 
@@ -91,22 +94,29 @@ func (m *EventManager) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to connect to queue provider: %w", err)
 	}
 
-	// Declare exchange
-	err = m.provider.DeclareExchange(ctx, ExchangeName, "topic")
-	if err != nil {
-		return fmt.Errorf("failed to declare exchange: %w", err)
-	}
+	// Skip infrastructure setup if external queue manager is used
+	if !m.skipInfrastructureSetup {
+		logger.Info(ctx, "Setting up queue infrastructure (exchanges, queues, bindings)", nil)
 
-	// Declare queue
-	_, err = m.provider.DeclareQueue(ctx, QueueName)
-	if err != nil {
-		return fmt.Errorf("failed to declare queue: %w", err)
-	}
+		// Declare exchange
+		err = m.provider.DeclareExchange(ctx, ExchangeName, "topic")
+		if err != nil {
+			return fmt.Errorf("failed to declare exchange: %w", err)
+		}
 
-	// Bind queue to exchange with routing key pattern
-	err = m.provider.BindQueue(ctx, QueueName, ExchangeName, "rbac.*.*.request")
-	if err != nil {
-		return fmt.Errorf("failed to bind queue: %w", err)
+		// Declare queue
+		_, err = m.provider.DeclareQueue(ctx, QueueName)
+		if err != nil {
+			return fmt.Errorf("failed to declare queue: %w", err)
+		}
+
+		// Bind queue to exchange with routing key pattern
+		err = m.provider.BindQueue(ctx, QueueName, ExchangeName, "rbac.*.*.request")
+		if err != nil {
+			return fmt.Errorf("failed to bind queue: %w", err)
+		}
+	} else {
+		logger.Info(ctx, "Skipping queue infrastructure setup (external queue manager enabled)", nil)
 	}
 
 	// Start consumer

@@ -11,10 +11,12 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=rbac
       - DB_PORT=5432
+      - RUN_MIGRATIONS=true  # Explicitly enable for local development
       - QUEUE_PROVIDER=RABBITMQ
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - RABBITMQ_MAX_CONNECTIONS=1
       - RABBITMQ_MAX_CHANNELS_PER_CONN=10
+      - HAS_EXTERNAL_QUEUE_MANAGER=false
     depends_on:
       - postgres
       - rabbitmq

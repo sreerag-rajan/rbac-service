@@ -124,14 +124,32 @@ RabbitMQ Management UI: `http://localhost:15672` (guest/guest)
 | `DB_PASSWORD` | Database password | `postgres` |
 | `DB_NAME` | Database name | `rbac` |
 | `PORT` | Service HTTP port | `9980` |
+| `RUN_MIGRATIONS` | Run database migrations on startup (only when explicitly `true`) | `false` |
 | `QUEUE_PROVIDER` | Queue provider (`RABBITMQ` or empty) | - |
 | `RABBITMQ_URL` | RabbitMQ connection URL | `amqp://guest:guest@localhost:5672/` |
 | `RABBITMQ_MAX_CONNECTIONS` | Max connection pool size | `1` |
 | `RABBITMQ_MAX_CHANNELS_PER_CONN` | Max channels per connection | `10` |
+| `HAS_EXTERNAL_QUEUE_MANAGER` | Skip queue/exchange/binding setup (external manager) | `false` |
 
 ### Disabling Event System
 
 To run without RabbitMQ, simply omit `QUEUE_PROVIDER` or set it to an empty string in your `.env` file.
+
+### External Queue Manager
+
+When `HAS_EXTERNAL_QUEUE_MANAGER=true`, the service will:
+- Skip creating exchanges, queues, and bindings
+- Only connect to RabbitMQ and consume from existing infrastructure
+- Expect an external service to manage queue topology
+
+This is useful in production environments where infrastructure is managed separately.
+
+### Database Migrations
+
+Set `RUN_MIGRATIONS=false` to skip automatic database migrations on startup. This is useful when:
+- Migrations are managed by a separate deployment process
+- Running multiple instances and only one should run migrations
+- Using a database migration tool like Flyway or Liquibase
 
 ## 🔌 API Endpoints
 

@@ -29,9 +29,15 @@ func main() {
 	}
 	defer repository.CloseDB()
 
-	// Run Migrations
-	if err := repository.RunMigrations(ctx, "./migrations"); err != nil {
-		logger.Fatal(ctx, "Failed to run migrations", err)
+	// Run Migrations (controlled by RUN_MIGRATIONS env var, defaults to false)
+	runMigrations := os.Getenv("RUN_MIGRATIONS")
+	if runMigrations == "true" {
+		logger.Info(ctx, "Running database migrations", nil)
+		if err := repository.RunMigrations(ctx, "./migrations"); err != nil {
+			logger.Fatal(ctx, "Failed to run migrations", err)
+		}
+	} else {
+		logger.Info(ctx, "Skipping database migrations (RUN_MIGRATIONS not set to 'true')", nil)
 	}
 
 	// 2. Init Repositories
@@ -54,7 +60,13 @@ func main() {
 		logger.Fatal(ctx, "Failed to create queue provider", err)
 	}
 
-	eventManager, err := events.NewEventManager(queueProvider, eventAuditRepo)
+	// Check if external queue manager is used (defaults to false)
+	hasExternalQueueManager := os.Getenv("HAS_EXTERNAL_QUEUE_MANAGER") == "true"
+	if hasExternalQueueManager {
+		logger.Info(ctx, "External queue manager enabled - will skip infrastructure setup", nil)
+	}
+
+	eventManager, err := events.NewEventManager(queueProvider, eventAuditRepo, hasExternalQueueManager)
 	if err != nil {
 		logger.Fatal(ctx, "Failed to create event manager", err)
 	}
