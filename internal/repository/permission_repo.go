@@ -190,3 +190,65 @@ func (r *PermissionRepository) CheckMiddlewarePermissions(ctx context.Context, u
 	}
 	return allowed, nil
 }
+
+// CheckMiddlewarePermissionsWithMV performs an optimized check using the materialized view.
+// This is significantly faster than CheckMiddlewarePermissions as it uses pre-computed permissions.
+func (r *PermissionRepository) CheckMiddlewarePermissionsWithMV(ctx context.Context, userID string, tenantID *string, permRes, permAct, assocRes, assocAct string) (bool, error) {
+	pool := GetPool()
+
+	query := `
+		SELECT EXISTS (
+			-- 1. Global Permission Check
+			SELECT 1 FROM pmsn.mv_user_permissions mvp
+			WHERE mvp.user_id = $1 
+			AND mvp.resource_code = $2 
+			AND mvp.action_code = $3
+			AND mvp.tenant_id IS NULL
+			
+			UNION
+			
+			-- 2. Tenant Permission Check (if tenant provided)
+			SELECT 1 FROM pmsn.mv_user_permissions mvp
+			JOIN pmsn.resource_action_tenant rat 
+				ON mvp.resource_id = rat.resource_id 
+				AND mvp.action_id = rat.action_id
+			WHERE $4 IS NOT NULL
+			AND mvp.user_id = $1 
+			AND mvp.resource_code = $2 
+			AND mvp.action_code = $3
+			AND (mvp.tenant_id = $4 OR mvp.tenant_id IS NULL)
+			AND rat.tenant_id = $4
+			
+			UNION
+			
+			-- 3. Associated Permission Check
+			SELECT 1 
+			WHERE $4 IS NOT NULL
+			AND EXISTS (
+				-- Check user is associated with tenant
+				SELECT 1 FROM pmsn.mv_user_permissions
+				WHERE user_id = $1 AND tenant_id = $4
+				LIMIT 1
+			)
+			AND EXISTS (
+				-- Check user has associated permission
+				SELECT 1 FROM pmsn.mv_user_permissions mvp
+				JOIN pmsn.resource_action_tenant rat 
+					ON mvp.resource_id = rat.resource_id 
+					AND mvp.action_id = rat.action_id
+				WHERE mvp.user_id = $1 
+				AND mvp.resource_code = $5 
+				AND mvp.action_code = $6
+				AND (mvp.tenant_id = $4 OR mvp.tenant_id IS NULL)
+				AND rat.tenant_id = $4
+			)
+		)
+	`
+
+	var allowed bool
+	err := pool.QueryRow(ctx, query, userID, permRes, permAct, tenantID, assocRes, assocAct).Scan(&allowed)
+	if err != nil {
+		return false, fmt.Errorf("failed to check permissions with MV: %w", err)
+	}
+	return allowed, nil
+}

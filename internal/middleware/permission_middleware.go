@@ -49,8 +49,8 @@ func (m *PermissionMiddleware) RequirePermission(permCode string, associatedPerm
 			tenantIDPtr = &targetTenantID
 		}
 
-		// Optimized single query check
-		allowed, err := m.permService.CheckMiddlewarePermissions(
+		// Optimized single query check using materialized view
+		allowed, err := m.permService.CheckMiddlewarePermissionsWithMV(
 			c.Request.Context(),
 			userID,
 			tenantIDPtr,
