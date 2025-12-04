@@ -66,14 +66,6 @@ func (s *PermissionService) CheckPermission(ctx context.Context, req model.Check
 	}
 }
 
-func (s *PermissionService) IsUserAssociatedWithTenant(ctx context.Context, userID, tenantID string) (bool, error) {
-	return s.permRepo.IsUserAssociatedWithTenant(ctx, userID, tenantID)
-}
-
-func (s *PermissionService) CheckMiddlewarePermissions(ctx context.Context, userID string, tenantID *string, permRes, permAct, assocRes, assocAct string) (bool, error) {
-	return s.permRepo.CheckMiddlewarePermissions(ctx, userID, tenantID, permRes, permAct, assocRes, assocAct)
-}
-
 func (s *PermissionService) CheckMiddlewarePermissionsWithMV(ctx context.Context, userID string, tenantID *string, permRes, permAct, assocRes, assocAct string) (bool, error) {
 	return s.permRepo.CheckMiddlewarePermissionsWithMV(ctx, userID, tenantID, permRes, permAct, assocRes, assocAct)
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"rbac-service/internal/model"
-
-	"github.com/jackc/pgx/v5"
 )
 
 type PermissionRepository struct{}
@@ -89,106 +87,6 @@ func (r *PermissionRepository) GetUserPermissions(ctx context.Context, userID, t
 	}
 
 	return permissions, nil
-}
-
-// IsUserAssociatedWithTenant checks if a user has any role or group associated with the given tenant.
-func (r *PermissionRepository) IsUserAssociatedWithTenant(ctx context.Context, userID, tenantID string) (bool, error) {
-	pool := GetPool()
-	query := `
-		SELECT 1
-		FROM (
-			SELECT r.tenant_id FROM pmsn.user_role ur JOIN pmsn.role r ON ur.role_id = r.id WHERE ur.user_id = $1
-			UNION
-			SELECT g.tenant_id FROM pmsn.user_group ug JOIN pmsn.group g ON ug.group_id = g.id WHERE ug.user_id = $1
-		) t
-		WHERE t.tenant_id = $2
-		LIMIT 1
-	`
-	var exists int
-	err := pool.QueryRow(ctx, query, userID, tenantID).Scan(&exists)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to check user association: %w", err)
-	}
-	return true, nil
-}
-
-// CheckMiddlewarePermissions performs an optimized check for:
-// 1. Global Permission (tenant_id IS NULL)
-// 2. Tenant Permission (tenant_id = $2)
-// 3. Associated Permission (tenant_id = $2 AND user associated with tenant)
-func (r *PermissionRepository) CheckMiddlewarePermissions(ctx context.Context, userID string, tenantID *string, permRes, permAct, assocRes, assocAct string) (bool, error) {
-	pool := GetPool()
-	query := `
-		WITH 
-			target_perm AS (
-				SELECT r.id as res_id, a.id as act_id
-				FROM pmsn.resource r JOIN pmsn.action a ON r.id = a.resource_id
-				WHERE r.code = $3 AND a.code = $4
-			),
-			assoc_perm AS (
-				SELECT r.id as res_id, a.id as act_id
-				FROM pmsn.resource r JOIN pmsn.action a ON r.id = a.resource_id
-				WHERE r.code = $5 AND a.code = $6
-			),
-			user_roles AS (
-				SELECT r.id, r.tenant_id
-				FROM pmsn.user_role ur JOIN pmsn.role r ON ur.role_id = r.id
-				WHERE ur.user_id = $1
-			),
-			user_groups AS (
-				SELECT g.id, g.tenant_id
-				FROM pmsn.user_group ug JOIN pmsn.group g ON ug.group_id = g.id
-				WHERE ug.user_id = $1
-			),
-			raw_perms AS (
-				SELECT rp.resource_id, rp.action_id, ur.tenant_id
-				FROM user_roles ur JOIN pmsn.role_permission rp ON ur.id = rp.role_id
-				UNION
-				SELECT gp.resource_id, gp.action_id, ug.tenant_id
-				FROM user_groups ug JOIN pmsn.group_permission gp ON ug.id = gp.group_id
-			)
-		SELECT EXISTS (
-			-- 1. Global Permission Check
-			SELECT 1 FROM raw_perms p, target_perm tp
-			WHERE p.resource_id = tp.res_id AND p.action_id = tp.act_id AND p.tenant_id IS NULL
-			
-			UNION
-			
-			-- 2. Tenant Permission Check
-			SELECT 1 FROM raw_perms p, target_perm tp, pmsn.resource_action_tenant rat
-			WHERE $2 IS NOT NULL 
-			AND p.resource_id = tp.res_id AND p.action_id = tp.act_id 
-			AND (p.tenant_id = $2 OR p.tenant_id IS NULL)
-			AND rat.resource_id = tp.res_id AND rat.action_id = tp.act_id AND rat.tenant_id = $2
-			
-			UNION
-			
-			-- 3. Associated Permission Check
-			SELECT 1 
-			WHERE $2 IS NOT NULL
-			AND EXISTS (
-				SELECT 1 FROM user_roles WHERE tenant_id = $2
-				UNION
-				SELECT 1 FROM user_groups WHERE tenant_id = $2
-			)
-			AND EXISTS (
-				SELECT 1 FROM raw_perms p, assoc_perm ap, pmsn.resource_action_tenant rat
-				WHERE p.resource_id = ap.res_id AND p.action_id = ap.act_id 
-				AND (p.tenant_id = $2 OR p.tenant_id IS NULL)
-				AND rat.resource_id = ap.res_id AND rat.action_id = ap.act_id AND rat.tenant_id = $2
-			)
-		)
-	`
-
-	var allowed bool
-	err := pool.QueryRow(ctx, query, userID, tenantID, permRes, permAct, assocRes, assocAct).Scan(&allowed)
-	if err != nil {
-		return false, fmt.Errorf("failed to check permissions: %w", err)
-	}
-	return allowed, nil
 }
 
 // CheckMiddlewarePermissionsWithMV performs an optimized check using the materialized view.
