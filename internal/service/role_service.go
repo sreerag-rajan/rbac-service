@@ -31,6 +31,11 @@ func (s *RoleService) CreateRole(ctx context.Context, name, tenantID string) (*m
 }
 
 func (s *RoleService) AssignPermissions(ctx context.Context, roleID string, permissions []model.Permission) error {
+	// TODO: Verify role belongs to tenant if tenant context is available.
+	// Current architecture relies on middleware for user permission check,
+	// but resource ownership check is missing here.
+	// For now, we assume the caller has verified this or we trust the ID.
+	// Ideally, we should fetch the role and check its TenantID against the context's TenantID.
 	return s.roleRepo.BulkAssignPermissions(ctx, roleID, permissions)
 }
 

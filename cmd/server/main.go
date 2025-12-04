@@ -12,6 +12,7 @@ import (
 	"rbac-service/internal/events/handlers"
 	"rbac-service/internal/events/rabbitmq"
 	"rbac-service/internal/logger"
+	"rbac-service/internal/middleware"
 	"rbac-service/internal/model"
 	"rbac-service/internal/repository"
 	"rbac-service/internal/service"
@@ -105,14 +106,17 @@ func main() {
 		defer eventManager.Stop()
 	}
 
-	// 6. Init Handlers
+	// 7. Init Middleware
+	permMiddleware := middleware.NewPermissionMiddleware(permService)
+
+	// 8. Init Handlers
 	tenantHandler := controller.NewTenantHandler(tenantApp)
 	roleHandler := controller.NewRoleHandler(roleApp)
 	groupHandler := controller.NewGroupHandler(groupApp)
 	validationHandler := controller.NewValidationHandler(validationApp)
 
-	// 7. Setup Router
-	r := controller.SetupRouter(tenantHandler, roleHandler, groupHandler, validationHandler)
+	// 9. Setup Router
+	r := controller.SetupRouter(tenantHandler, roleHandler, groupHandler, validationHandler, permMiddleware)
 
 	// 8. Start Server with graceful shutdown
 	port := os.Getenv("PORT")

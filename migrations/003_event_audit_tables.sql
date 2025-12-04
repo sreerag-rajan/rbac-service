@@ -1,3 +1,5 @@
+BEGIN;
+
 -- Migration 003: Event Audit Tables
 -- Create tables for tracking published and consumed events
 
@@ -31,3 +33,5 @@ CREATE TABLE IF NOT EXISTS pmsn.consumed_events (
 CREATE INDEX IF NOT EXISTS idx_consumed_events_status ON pmsn.consumed_events(status);
 CREATE INDEX IF NOT EXISTS idx_consumed_events_event_type ON pmsn.consumed_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_consumed_events_created_at ON pmsn.consumed_events(created_at);
+
+COMMIT;

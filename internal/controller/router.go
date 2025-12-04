@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"rbac-service/internal/middleware"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -9,34 +11,65 @@ func SetupRouter(
 	roleHandler *RoleHandler,
 	groupHandler *GroupHandler,
 	validationHandler *ValidationHandler,
+	permMiddleware *middleware.PermissionMiddleware,
 ) *gin.Engine {
 	r := gin.Default()
 
 	v1 := r.Group("/api/v1")
 	{
 		// Tenant
-		v1.POST("/tenant/permissions/bulk", tenantHandler.BulkAssignPermissions) // Deprecated: Use /add
-		v1.POST("/tenant/permissions/add", tenantHandler.BulkAssignPermissions)
-		v1.POST("/tenant/permissions/remove", tenantHandler.BulkRemovePermissions)
-		v1.PUT("/tenant/permissions", tenantHandler.BulkSyncPermissions)
+		tenant := v1.Group("/tenant")
+		tenant.Use(permMiddleware.RequirePermission("tenant_permission.manage", "tenant_permission.manage")) // No associated variant for tenant permissions explicitly defined as different logic, but using same code for now or maybe just one. User said "tenant_permission.manage".
+		{
+			tenant.POST("/permissions/bulk", tenantHandler.BulkAssignPermissions) // Deprecated
+			tenant.POST("/permissions/add", tenantHandler.BulkAssignPermissions)
+			tenant.POST("/permissions/remove", tenantHandler.BulkRemovePermissions)
+			tenant.PUT("/permissions", tenantHandler.BulkSyncPermissions)
+		}
 
 		// Roles
-		v1.POST("/roles", roleHandler.CreateRole)
-		v1.POST("/roles/:role_id/permissions/bulk", roleHandler.BulkAssignPermissions) // Deprecated: Use /add
-		v1.POST("/roles/:role_id/permissions/add", roleHandler.BulkAssignPermissions)
-		v1.POST("/roles/:role_id/permissions/remove", roleHandler.BulkRemovePermissions)
-		v1.PUT("/roles/:role_id/permissions", roleHandler.BulkSyncPermissions)
-		v1.POST("/roles/:role_id/users/bulk", roleHandler.BulkAssignUsers)
-		v1.DELETE("/roles/:role_id/users/bulk", roleHandler.BulkRemoveUsers)
+		roles := v1.Group("/roles")
+		{
+			roles.POST("", permMiddleware.RequirePermission("role.manage", "role.manage_tenant_associated"), roleHandler.CreateRole)
+
+			rolePerms := roles.Group("/:role_id")
+			rolePerms.Use(permMiddleware.RequirePermission("role.manage_permissions", "role.manage_permissions_tenant_associated"))
+			{
+				rolePerms.POST("/permissions/bulk", roleHandler.BulkAssignPermissions) // Deprecated
+				rolePerms.POST("/permissions/add", roleHandler.BulkAssignPermissions)
+				rolePerms.POST("/permissions/remove", roleHandler.BulkRemovePermissions)
+				rolePerms.PUT("/permissions", roleHandler.BulkSyncPermissions)
+			}
+
+			roleUsers := roles.Group("/:role_id/users")
+			roleUsers.Use(permMiddleware.RequirePermission("role.manage", "role.manage_tenant_associated")) // Assuming role management covers user assignment
+			{
+				roleUsers.POST("/bulk", roleHandler.BulkAssignUsers)
+				roleUsers.DELETE("/bulk", roleHandler.BulkRemoveUsers)
+			}
+		}
 
 		// Groups
-		v1.POST("/groups", groupHandler.CreateGroup)
-		v1.POST("/groups/:group_id/permissions/bulk", groupHandler.BulkAssignPermissions) // Deprecated: Use /add
-		v1.POST("/groups/:group_id/permissions/add", groupHandler.BulkAssignPermissions)
-		v1.POST("/groups/:group_id/permissions/remove", groupHandler.BulkRemovePermissions)
-		v1.PUT("/groups/:group_id/permissions", groupHandler.BulkSyncPermissions)
-		v1.POST("/groups/:group_id/users/bulk", groupHandler.BulkAssignUsers)
-		v1.DELETE("/groups/:group_id/users/bulk", groupHandler.BulkRemoveUsers)
+		groups := v1.Group("/groups")
+		{
+			groups.POST("", permMiddleware.RequirePermission("group.manage", "group.manage_tenant_associated"), groupHandler.CreateGroup)
+
+			groupPerms := groups.Group("/:group_id")
+			groupPerms.Use(permMiddleware.RequirePermission("group.manage_permissions", "group.manage_permissions_tenant_associated"))
+			{
+				groupPerms.POST("/permissions/bulk", groupHandler.BulkAssignPermissions) // Deprecated
+				groupPerms.POST("/permissions/add", groupHandler.BulkAssignPermissions)
+				groupPerms.POST("/permissions/remove", groupHandler.BulkRemovePermissions)
+				groupPerms.PUT("/permissions", groupHandler.BulkSyncPermissions)
+			}
+
+			groupUsers := groups.Group("/:group_id/users")
+			groupUsers.Use(permMiddleware.RequirePermission("group.manage", "group.manage_tenant_associated")) // Assuming group management covers user assignment
+			{
+				groupUsers.POST("/bulk", groupHandler.BulkAssignUsers)
+				groupUsers.DELETE("/bulk", groupHandler.BulkRemoveUsers)
+			}
+		}
 
 		// Validation
 		v1.POST("/check-permission", validationHandler.CheckPermission)
